@@ -72,3 +72,5 @@ void removeShm(int shmid) {
         perror("shmctl(IPC_RMID)");
     }
 }
+
+//test

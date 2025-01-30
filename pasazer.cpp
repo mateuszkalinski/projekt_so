@@ -124,3 +124,4 @@ int main(int argc, char* argv[])
     logMsg("Wszyscy pasazerowie zakonczyli dzialanie. Koncze pasazer.cpp.");
     return 0;
 }
+//test
