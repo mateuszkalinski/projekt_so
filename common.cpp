@@ -73,4 +73,4 @@ void removeShm(int shmid) {
     }
 }
 
-//test
+//t
