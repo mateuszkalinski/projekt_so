@@ -1,9 +1,6 @@
 #include "common.h"
 
-// ------------------------- SEMAFORY --------------------------
-
 int createOrGetSemaphore(key_t key) {
-    // Tworzy tablice 3 semaforow: SEM_BRIDGE, SEM_SHIP, SEM_DIR
     int semid = semget(key, SEM_COUNT, 0666 | IPC_CREAT);
     if(semid == -1) {
         perror("semget");
@@ -30,18 +27,15 @@ int getSemValue(int semid, int semnum) {
     return val;
 }
 
-// op < 0 => P (wait), op > 0 => V (signal)
 void semOp(int semid, int semnum, int op) {
     struct sembuf sb;
     sb.sem_num = semnum;
-    sb.sem_op = op;
+    sb.sem_op  = op;
     sb.sem_flg = 0;
     if (semop(semid, &sb, 1) == -1) {
         perror("semop");
     }
 }
-
-// -------------------- PAMIEC DZIELONA -------------------------
 
 int createOrGetShm(key_t key) {
     int shmid = shmget(key, sizeof(SharedData), 0666 | IPC_CREAT);
@@ -69,8 +63,6 @@ void detachShm(const void* addr) {
 
 void removeShm(int shmid) {
     if(shmctl(shmid, IPC_RMID, nullptr) == -1) {
-        perror("shmctl(IPC_RMID)");
+        perror("shmctl IPC_RMID");
     }
 }
-
-//te

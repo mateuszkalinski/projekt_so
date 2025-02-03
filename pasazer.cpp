@@ -1,127 +1,177 @@
 #include "common.h"
-#include <vector>
+#include <atomic>
 #include <cstdlib>
+#include <ctime>
 
-// Funkcja w procesie potomnym (pasazer)
-void passengerProcess(int id)
+static std::atomic<int> nextPassengerID{0};
+
+void onePassenger(int pId);
+
+int main()
 {
-    // Dolaczenie do semaforow i pamieci
-    key_t keySem = ftok(FTOK_PATH, FTOK_ID_SEM);
-    key_t keyShm = ftok(FTOK_PATH, FTOK_ID_SHM);
+    logMsg("Proces PASAZER (generator) uruchomiony.");
+    srand(time(NULL));
 
-    int semid = semget(keySem, SEM_COUNT, 0666);
-    if(semid == -1) {
-        perror("pasazer semget");
-        exit(1);
-    }
+    key_t keyShm = ftok(FTOK_PATH, FTOK_ID_SHM);
     int shmid = shmget(keyShm, sizeof(SharedData), 0666);
     if(shmid == -1) {
         perror("pasazer shmget");
         exit(1);
     }
-
     SharedData* shdata = attachShm(shmid);
 
-    // Proba wejscia na mostek
-    // Najpierw sprawdzamy, czy statek jest w fazie disembarking. Jesli tak, 
-    // to mozemy troche poczekac, az skonczy lub wyjdziemy. 
-    // (zeby pokazac unikanie kolizji kierunkow)
-    while(shdata->disembarking) {
-        // czekamy
-        sleep(1);
+    key_t keySem = ftok(FTOK_PATH, FTOK_ID_SEM);
+    int semid = semget(keySem, SEM_COUNT, 0666);
+    if(semid == -1) {
+        perror("pasazer semget");
+        exit(1);
+    }
+
+    // W petli tworzymy pasazerow dopoki endOfDay == false
+    while(true) {
         if(shdata->endOfDay) {
-            logMsg("Pasazer " + std::to_string(id) + " rezygnuje, bo endOfDay w trakcie czekania na kierunek.");
+            logMsg("Generator pasazerow konczy, bo endOfDay.");
+            break;
+        }
+        int pid = ++nextPassengerID;
+        pid_t c = fork();
+        if(c == 0) {
+            onePassenger(pid);
+        } else if(c < 0) {
+            perror("fork");
+        }
+
+        // Minimalna pauza, zeby pojawialo sie kilka osob
+        usleep(300000); // 0.3 sek
+    }
+
+    // czekamy na dzieci
+    while(true) {
+        pid_t w = waitpid(-1, nullptr, WNOHANG);
+        if(w <= 0) break;
+    }
+
+    logMsg("Generator pasazerow zakonczyl prace.");
+    detachShm(shdata);
+    return 0;
+}
+
+void onePassenger(int pId)
+{
+    key_t keyShm = ftok(FTOK_PATH, FTOK_ID_SHM);
+    int shmid = shmget(keyShm, sizeof(SharedData), 0666);
+    if(shmid == -1) {
+        perror("onePassenger shmget");
+        exit(1);
+    }
+    SharedData* shdata = attachShm(shmid);
+
+    key_t keySem = ftok(FTOK_PATH, FTOK_ID_SEM);
+    int semid = semget(keySem, SEM_COUNT, 0666);
+    if(semid == -1) {
+        perror("onePassenger semget");
+        exit(1);
+    }
+
+    // 1) czekamy na faze zaladunku => SEM_DIR=1, loading=true, traveling=false
+    while(true) {
+        if(shdata->endOfDay) {
+            logMsg("Pasazer "+std::to_string(pId)+": rezygnuje, bo endOfDay (nie zdazyl wejsc).");
             detachShm(shdata);
             exit(0);
         }
+        int dirVal = getSemValue(semid, SEM_DIR);
+        if(dirVal == 1 && shdata->loading && !shdata->traveling) {
+            break;
+        }
+        usleep(50000);
     }
 
-    // Sprawdzamy, czy trwa zaladunek. Jesli nie ma zaladunku i traveling==true, 
-    // to i tak nie wejdziemy.
+    // Sprawdzamy czy mostek jest pelny -> jesli tak, log "czeka"
+    // Ale w semop -1 i tak bedziemy czekac, jesli jest 0:
+    {
+        int valBridge = getSemValue(semid, SEM_BRIDGE);
+        if(valBridge == 0) {
+            logMsg("Pasazer "+std::to_string(pId)+" czeka, bo mostek jest pelen.");
+        }
+    }
+    // Wchodzimy na mostek
+    semOp(semid, SEM_BRIDGE, -1);
+
+    // Jesli w miedzyczasie loading=false
     if(!shdata->loading || shdata->traveling || shdata->endOfDay) {
-        logMsg("Pasazer " + std::to_string(id) + " nie moze wejsc, bo statek nie jest w fazie zaladunku lub endOfDay.");
+        logMsg("Pasazer "+std::to_string(pId)+" rezygnuje, bo loading=false lub traveling=true czy endOfDay.");
+        semOp(semid, SEM_BRIDGE, +1);
         detachShm(shdata);
         exit(0);
     }
 
-    logMsg("Pasazer " + std::to_string(id) + " probuje wejsc na mostek...");
-    semOp(semid, SEM_BRIDGE, -1); // P na mostek
+    logMsg("Pasazer "+std::to_string(pId)+" wchodzi na mostek.");
 
-    // Jesli w trakcie wchodzenia nadszedl endOfDay i statek nie plynie
-    if(shdata->endOfDay && !shdata->traveling) {
-        logMsg("Pasazer " + std::to_string(id) + " rezygnuje, bo endOfDay podczas wchodzenia na mostek.");
-        semOp(semid, SEM_BRIDGE, 1); // zwalniamy mostek
+    // SLOW_MODE
+    sleep(1);
+
+    // Czy statek jest pelny -> rezygnujemy
+    if(getSemValue(semid, SEM_SHIP) == 0) {
+        logMsg("Pasazer "+std::to_string(pId)+" widzi, ze statek jest pelny. Rezygnuje.");
+        semOp(semid, SEM_BRIDGE, +1);
         detachShm(shdata);
         exit(0);
     }
+    
+    // Rowniez mozna logowac "czeka, bo statek pelen" jesli SEM_SHIP==0, 
+    // ale tu akurat rezygnuje, wiec moze nie czekac.
 
-    logMsg("Pasazer " + std::to_string(id) + " jest na moscie.");
-
-    // Wejscie na statek (P na SEM_SHIP)
+    // Wchodzimy na statek
     semOp(semid, SEM_SHIP, -1);
-    // Zwolnienie mostka
-    semOp(semid, SEM_BRIDGE, 1);
+    logMsg("Pasazer "+std::to_string(pId)+" wchodzi na statek.");
 
-    // Jesli w tym momencie ogloszono endOfDay, a nie wyruszylismy 
-    // (traveling==false), to schodzimy:
-    if(shdata->endOfDay && !shdata->traveling) {
-        logMsg("Pasazer " + std::to_string(id) + " schodzi, bo endOfDay i statek nie wyruszyl.");
-        semOp(semid, SEM_SHIP, 1); // oddajemy miejsce
-        detachShm(shdata);
-        exit(0);
+    // Zwalniamy mostek
+    semOp(semid, SEM_BRIDGE, +1);
+
+    // SLOW_MODE
+    sleep(1);
+
+    // 2) czekamy na rejs (traveling=true->false)
+    while(!shdata->traveling && !shdata->endOfDay) {
+        usleep(50000);
+    }
+    while(shdata->traveling && !shdata->endOfDay) {
+        usleep(50000);
     }
 
-    logMsg("Pasazer " + std::to_string(id) + " jest na statku. Czeka na rejs.");
-
-    // Czekamy na rejs: statek zmieni traveling=false->true->false. 
-    // Ale jest mozliwe, ze statek jest juz traveling (jesli zdazyl),
-    // to czekamy do konca rejsu.
-    while(!shdata->endOfDay && !shdata->traveling) {
-        sleep(1);
+    // 3) czekamy na wyadunek => SEM_DIR=0, disembarking=true
+    while(true) {
+        if(shdata->endOfDay) {
+            // moze nas w miedzyczasie usunac forceUnload
+        }
+        int dVal = getSemValue(semid, SEM_DIR);
+        if(dVal == 0 && shdata->disembarking) {
+            break;
+        }
+        usleep(50000);
     }
-    // Teraz statek w rejsie
-    while(!shdata->endOfDay && shdata->traveling) {
-        sleep(1);
-    }
 
-    // Po zakonczeniu rejsu schodzimy
-    logMsg("Pasazer " + std::to_string(id) + " schodzi ze statku po rejsie.");
-    semOp(semid, SEM_SHIP, 1);
+    // Schodzimy: mostek--
+    {
+        int valBridge = getSemValue(semid, SEM_BRIDGE);
+        if(valBridge == 0) {
+            logMsg("Pasazer "+std::to_string(pId)+" czeka, bo mostek jest pelen (schodzenie).");
+        }
+    }
+    semOp(semid, SEM_BRIDGE, -1);
+
+    logMsg("Pasazer "+std::to_string(pId)+" schodzi ze statku na mostek.");
+    
+    // SLOW_MODE
+    sleep(1);
+
+    // Zwolniamy statek
+    semOp(semid, SEM_SHIP, +1);
+
+    logMsg("Pasazer "+std::to_string(pId)+" zszedl z mostka.");
+    semOp(semid, SEM_BRIDGE, +1);
 
     detachShm(shdata);
     exit(0);
 }
-
-int main(int argc, char* argv[])
-{
-    if(argc < 2) {
-        std::cerr << "Uzycie: " << argv[0] << " <liczba_pasazerow>\n";
-        return 1;
-    }
-    int M = std::atoi(argv[1]);
-    logMsg("Proces PASAZER: tworze " + std::to_string(M) + " pasazerow.");
-
-    std::vector<pid_t> pids;
-    pids.reserve(M);
-
-    for(int i = 0; i < M; i++) {
-        pid_t pid = fork();
-        if(pid == 0) {
-            // child
-            passengerProcess(i+1);
-        } else if(pid > 0) {
-            pids.push_back(pid);
-        } else {
-            perror("fork");
-        }
-    }
-
-    // Czekamy na wszystkie procesy potomne
-    for(pid_t pid : pids) {
-        waitpid(pid, nullptr, 0);
-    }
-
-    logMsg("Wszyscy pasazerowie zakonczyli dzialanie. Koncze pasazer.cpp.");
-    return 0;
-}
-//te

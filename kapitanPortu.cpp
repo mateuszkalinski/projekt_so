@@ -4,14 +4,9 @@
 
 int main()
 {
-    key_t keySem = ftok(FTOK_PATH, FTOK_ID_SEM);
-    key_t keyShm = ftok(FTOK_PATH, FTOK_ID_SHM);
+    logMsg("Kapitan Portu uruchomiony. (losowe sygnaly)");
 
-    int semid = semget(keySem, SEM_COUNT, 0666);
-    if(semid == -1) {
-        perror("kapitanPortu semget");
-        exit(1);
-    }
+    key_t keyShm = ftok(FTOK_PATH, FTOK_ID_SHM);
     int shmid = shmget(keyShm, sizeof(SharedData), 0666);
     if(shmid == -1) {
         perror("kapitanPortu shmget");
@@ -19,36 +14,38 @@ int main()
     }
     SharedData* shdata = attachShm(shmid);
 
-    logMsg("Kapitan Portu uruchomiony.");
-
-    // Czekamy az kapitanStatkuPID bedzie ustawiony
     while(shdata->kapitanStatkuPID == 0) {
-        logMsg("Oczekuje na uruchomienie Kapitana Statku...");
+        logMsg("Czekam na uruchomienie Kapitana Statku...");
         sleep(1);
     }
     pid_t pidStatku = shdata->kapitanStatkuPID;
+    srand(time(NULL));
 
-    logMsg("PID Kapitana Statku: " + std::to_string(pidStatku));
+    while(true) {
+        if(shdata->endOfDay || shdata->rejsCount >= R) {
+            logMsg("Kapitan Portu konczy, bo endOfDay lub R osiagniete.");
+            break;
+        }
+        int waitSec = 2 + (rand()%4); // 2..5
+        sleep(waitSec);
 
-    srand(time(nullptr));
+        if(shdata->endOfDay || shdata->rejsCount >= R) {
+            break;
+        }
 
-    // Pierwszy sygnal1 wysylamy np. po 5-10s
-    int wait1 = 5 + (rand() % 6);
-    logMsg("Za " + std::to_string(wait1) + "s wysle SIGUSR1 (wczesniejsze wyplyniecie).");
-    sleep(wait1);
-
-    kill(pidStatku, SIGUSR1);
-    logMsg("Wyslano SIGUSR1.");
-
-    // Drugi sygnal2 po kolejnym 5-10s
-    int wait2 = 5 + (rand() % 6);
-    logMsg("Za " + std::to_string(wait2) + "s wysle SIGUSR2 (koniec rejsow).");
-    sleep(wait2);
-
-    kill(pidStatku, SIGUSR2);
-    logMsg("Wyslano SIGUSR2.");
+        int x = rand()%100;
+        if(x < 30) {
+            logMsg("Wysylam SIGUSR1 (wczesniejsze wyplyniecie). (x="+std::to_string(x)+")");
+            kill(pidStatku, SIGUSR1);
+        } else if(x < 40) {
+            logMsg("Wysylam SIGUSR2 (koniec rejsow). (x="+std::to_string(x)+")");
+            kill(pidStatku, SIGUSR2);
+        } else {
+            logMsg("Nie wysylam sygnalu tym razem. (x="+std::to_string(x)+")");
+        }
+    }
 
     detachShm(shdata);
+    logMsg("Kapitan Portu zakonczyl dzialanie.");
     return 0;
 }
-//te
