@@ -14,9 +14,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+// Definicja sciezki dla ftok (tworzenie kluczy IPC)
 static const char* FTOK_PATH = "/tmp";
 
 // --------------------- Kolory ANSI ---------------------
+// Te definicje pozwalaja kolorowac tekst w konsoli (np. logi).
+// COL_RESET zawsze wraca do normalnego koloru.
 #define COL_RESET   "\033[0m"
 #define COL_BOLD    "\033[1m"
 
@@ -35,7 +38,7 @@ static const char* FTOK_PATH = "/tmp";
 #define COL_BCYAN   "\033[1;36m"
 #define COL_BWHITE  "\033[1;37m"
 
-// Funkcja do logowania w kolorze
+// Funkcja do logowania w kolorze w konsoli
 inline void colorLog(const std::string &msg, const char* color)
 {
     std::cout << color << msg << COL_RESET << std::endl;
@@ -43,39 +46,48 @@ inline void colorLog(const std::string &msg, const char* color)
 
 // --------------------- SEMAFORY, PAMIEC DZIELONA ---------------------
 
+// Indeksy semaforow:
+// SEM_BRIDGE - ogranicza liczbe osob na moscie,
+// SEM_SHIP - ogranicza liczbe osob na statku,
+// SEM_DIR - okresla kierunek (1 = zaladunek, 0 = wyladunek).
 enum {
-    SEM_BRIDGE = 0, // ogranicza liczbe osob na moscie
-    SEM_SHIP   = 1, // ogranicza liczbe osob na statku
-    SEM_DIR    = 2, // 1=zaladunek, 0=wyladunek
+    SEM_BRIDGE = 0,
+    SEM_SHIP   = 1,
+    SEM_DIR    = 2,
     SEM_COUNT  = 3
 };
 
-// Struktura w pamieci dzielonej
+// Struktura przechowywana w pamieci dzielonej.
+// Zawiera:
+//  - PID Kapitana Statku i Generatora Pasaerow
+//  - flage endOfDay informujaca o koncu dnia
+//  - informacje o stanie zaladunku, rejsu, itp.
+//  - parametry N, K, R, T2
 struct SharedData {
     pid_t kapitanStatkuPID;
-    pid_t generatorPID;     // NOWE - PID generatora pasazerow
+    pid_t generatorPID;
 
-    bool endOfDay;
-    bool traveling;
-    bool loading;
-    bool disembarking;
-    int  rejsCount;
+    bool endOfDay;       // gdy true, oznacza zakonczenie dnia
+    bool traveling;      // czy statek jest w rejsie
+    bool loading;        // czy trwa zaladunek
+    bool disembarking;   // czy trwa wyladunek
+    int  rejsCount;      // ile rejsow wykonano
 
-    // Parametry
-    int N;
-    int K;
-    int R;
-    int T2;
+    int N;  // pojemnosc statku
+    int K;  // pojemnosc mostka
+    int R;  // ile rejsow max
+    int T2; // czas jednego rejsu
 };
 
-// Struktura do semctl
+// Struktura uzywana do operacji semctl
 union semun {
     int val;
     struct semid_ds *buf;
     unsigned short *array;
 };
 
-// Deklaracje funkcji
+// Deklaracje funkcji do obslugi semaforow i pamieci dzielonej
+
 int  createOrGetSemaphore(key_t key);
 int  setSemValue(int semid, int semnum, int value);
 int  getSemValue(int semid, int semnum);
