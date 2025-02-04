@@ -3,8 +3,9 @@
 #include <cstdlib>
 #include <ctime>
 
-static std::atomic<int> nextPassengerID{0};
+static std::atomic<int> nextPassengerID{0}; // liczy kolejne ID pasazerow
 
+// Funkcja dla pojedynczego pasazera (wywolywana w child po fork)
 void onePassenger(int pId);
 
 int main()
@@ -13,18 +14,22 @@ int main()
 
     srand(time(NULL));
 
+    // Tworzenie klucza do pamieci dzielonej
     key_t keyShm = ftok(FTOK_PATH, 0x12);
     if(keyShm == -1) { perror("ftok pasazer shm"); exit(1); }
+    // Proba pobrania segmentu pamieci (bez IPC_CREAT - zakladamy, ze juz jest)
     int shmid = shmget(keyShm, sizeof(SharedData), 0600);
     if(shmid == -1) {
         perror("pasazer shmget");
         exit(1);
     }
+    // Dolaczamy sie do pamieci
     SharedData* shdata = attachShm(shmid);
 
-    // Ustawiamy generatorPID
+    // Ustawiamy generatorPID w pamieci, by KapitanStatku wiedzial, kto jest generatorem
     shdata->generatorPID = getpid();
 
+    // Tworzenie klucza do semaforow
     key_t keySem = ftok(FTOK_PATH, 0x11);
     if(keySem == -1) { perror("ftok pasazer sem"); exit(1); }
     int semid = semget(keySem, SEM_COUNT, 0600);
@@ -33,7 +38,7 @@ int main()
         exit(1);
     }
 
-    // Generujemy pasazerow co 1 sek, dopoki endOfDay==false
+    // Petla: generujemy pasazerow co 1 sek, dopoki endOfDay==false
     while(true) {
         if(shdata->endOfDay) {
             colorLog("[PasazerGenerator] przerwanie petli generowania, bo endOfDay.", COL_RED);
@@ -42,15 +47,16 @@ int main()
         int pId = ++nextPassengerID;
         pid_t c = fork();
         if(c == 0) {
-            // child => onePassenger
+            // child => uruchamiamy onePassenger
             onePassenger(pId);
         } else if(c < 0) {
             perror("fork");
         }
-        usleep(30000000); // 1 sek
+        // Poczekaj 1 sek miedzy kolejnymi pasazerami
+        usleep(1000000);
     }
 
-    // Gdy endOfDay, musimy jeszcze poczekac na wszystkie dzieci
+    // Gdy petla sie konczy (endOfDay=true), czekamy blokujaco na wszystkie dzieci (pasazerow)
     while(true) {
         pid_t w = waitpid(-1, nullptr, 0);
         if(w<0) {
@@ -66,8 +72,10 @@ int main()
     return 0;
 }
 
+// Funkcja wywolana w procesie potomnym - jeden pasazer
 void onePassenger(int pId)
 {
+    // Dolaczenie do pamieci
     key_t keyShm = ftok(FTOK_PATH, 0x12);
     int shmid = shmget(keyShm, sizeof(SharedData), 0600);
     if(shmid == -1) {
@@ -76,6 +84,7 @@ void onePassenger(int pId)
     }
     SharedData* shdata = attachShm(shmid);
 
+    // Dolaczenie do semaforow
     key_t keySem = ftok(FTOK_PATH, 0x11);
     int semid = semget(keySem, SEM_COUNT, 0600);
     if(semid == -1) {
@@ -83,9 +92,10 @@ void onePassenger(int pId)
         exit(1);
     }
 
-    // Petla czekania => SEM_DIR=1 i loading=true i traveling=false
+    // 1) Czekamy, az (SEM_DIR==1, loading==true, traveling==false) - faza zaladunku
     while(true) {
         if(shdata->endOfDay) {
+            // jesli endOfDay==true, to pasazer rezygnuje
             std::string msg = "[Pasazer " + std::to_string(pId) + "] rezygnuje.";
             colorLog(msg, COL_RED);
             detachShm(shdata);
@@ -98,7 +108,7 @@ void onePassenger(int pId)
         usleep(50000);
     }
 
-    // czy mostek pelen
+    // 2) Proba wejscia na mostek
     {
         int valBridge = getSemValue(semid, SEM_BRIDGE);
         if(valBridge==0) {
@@ -108,6 +118,8 @@ void onePassenger(int pId)
     }
     semOp(semid, SEM_BRIDGE, -1);
 
+    // Jesli w trakcie zajmowania mostka loading sie wylaczy, traveling sie wlaczy lub endOfDay,
+    // to pasazer rezygnuje
     if(!shdata->loading || shdata->traveling || shdata->endOfDay) {
         std::string msg = "[Pasazer " + std::to_string(pId) + "] rezygnuje.";
         colorLog(msg, COL_RED);
@@ -121,10 +133,9 @@ void onePassenger(int pId)
         colorLog(msg, COL_YELLOW);
     }
 
-    // ewentualnie usleep(500000);
-
-    // czy statek pelny
+    // 3) Sprawdzamy, czy statek jest juz pelny
     if(getSemValue(semid, SEM_SHIP)==0) {
+        // jesli tak, to rezygnuje
         std::string msg = "[Pasazer " + std::to_string(pId) + "] rezygnuje.";
         colorLog(msg, COL_RED);
         semOp(semid, SEM_BRIDGE, +1);
@@ -132,7 +143,7 @@ void onePassenger(int pId)
         exit(0);
     }
 
-    // wchodzimy na statek
+    // 4) Wchodzimy na statek
     semOp(semid, SEM_SHIP, -1);
     {
         std::string msg = "[Pasazer " + std::to_string(pId) + "] wchodzi na statek.";
@@ -140,18 +151,17 @@ void onePassenger(int pId)
     }
     semOp(semid, SEM_BRIDGE, +1);
 
-    // czekamy rejs
+    // 5) Czekamy na rejs (traveling=true->false)
     while(!shdata->traveling && !shdata->endOfDay) {
         usleep(50000);
     }
     while(shdata->traveling && !shdata->endOfDay) {
         usleep(50000);
     }
-    if(shdata->endOfDay) {
-        // moze forceUnload itp
-    }
 
-    // wyladunek => SEM_DIR=0, disembarking=true
+    // Jesli endOfDay w trakcie, to pasazer moze byc wywalony forceUnload
+    // (ew. rezygnuje)
+    // 6) Czekamy na wyladunek (SEM_DIR=0, disembarking=true)
     while(true) {
         int dVal = getSemValue(semid, SEM_DIR);
         if(dVal==0 && shdata->disembarking) {
@@ -163,7 +173,7 @@ void onePassenger(int pId)
         usleep(50000);
     }
 
-    // schodzimy
+    // 7) Schodzenie
     {
         int valBridge = getSemValue(semid, SEM_BRIDGE);
         if(valBridge==0) {
