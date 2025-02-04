@@ -14,45 +14,58 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-/*
-   Konfiguracja:
-   N - pojemnosc statku
-   K - pojemnosc mostka
-   R - maksymalna liczba rejsow
-   T2 - czas rejsu
-*/
-
-static const int N = 5;  
-static const int K = 3;  
-static const int R = 3;  
-static const int T2 = 5;  
-
-// sciezka i ID do ftok
 static const char* FTOK_PATH = "/tmp";
-static const int FTOK_ID_SEM = 0x70;
-static const int FTOK_ID_SHM = 0x71;
 
-/*
-   Semafory:
-   SEM_BRIDGE -> ogranicza liczbe osob na moscie (K)
-   SEM_SHIP   -> ogranicza liczbe osob na statku (N)
-   SEM_DIR    -> 1=zaladunek, 0=wyadunek
-*/
+// --------------------- Kolory ANSI ---------------------
+#define COL_RESET   "\033[0m"
+#define COL_BOLD    "\033[1m"
+
+#define COL_RED     "\033[31m"
+#define COL_GREEN   "\033[32m"
+#define COL_YELLOW  "\033[33m"
+#define COL_BLUE    "\033[34m"
+#define COL_MAGENTA "\033[35m"
+#define COL_CYAN    "\033[36m"
+#define COL_WHITE   "\033[37m"
+#define COL_GRAY    "\033[90m"
+
+#define COL_BRED    "\033[1;31m"
+#define COL_BGREEN  "\033[1;32m"
+#define COL_BBLUE   "\033[1;34m"
+#define COL_BCYAN   "\033[1;36m"
+#define COL_BWHITE  "\033[1;37m"
+
+// Funkcja do logowania w kolorze
+inline void colorLog(const std::string &msg, const char* color)
+{
+    std::cout << color << msg << COL_RESET << std::endl;
+}
+
+// --------------------- SEMAFORY, PAMIEC DZIELONA ---------------------
+
 enum {
-    SEM_BRIDGE = 0,
-    SEM_SHIP   = 1,
-    SEM_DIR    = 2,
+    SEM_BRIDGE = 0, // ogranicza liczbe osob na moscie
+    SEM_SHIP   = 1, // ogranicza liczbe osob na statku
+    SEM_DIR    = 2, // 1=zaladunek, 0=wyladunek
     SEM_COUNT  = 3
 };
 
+// Struktura w pamieci dzielonej
 struct SharedData {
     pid_t kapitanStatkuPID;
+    pid_t generatorPID;     // NOWE - PID generatora pasazerow
 
-    bool endOfDay;       // sygnal2 => koniec rejsow
-    bool traveling;      // czy statek jest w rejsie
-    bool loading;        // czy trwa zaladunek
-    bool disembarking;   // czy trwa wyadunek
-    int  rejsCount;      // ile rejsow wykonano
+    bool endOfDay;
+    bool traveling;
+    bool loading;
+    bool disembarking;
+    int  rejsCount;
+
+    // Parametry
+    int N;
+    int K;
+    int R;
+    int T2;
 };
 
 // Struktura do semctl
@@ -62,22 +75,15 @@ union semun {
     unsigned short *array;
 };
 
-// Deklaracje semaforow
+// Deklaracje funkcji
 int  createOrGetSemaphore(key_t key);
 int  setSemValue(int semid, int semnum, int value);
 int  getSemValue(int semid, int semnum);
 void semOp(int semid, int semnum, int op);
 
-// Deklaracje pamieci dzielonej
-int         createOrGetShm(key_t key);
+int  createOrGetShm(key_t key);
 SharedData* attachShm(int shmid);
-void        detachShm(const void* addr);
-void        removeShm(int shmid);
-
-// Funkcja pomocnicza do logow
-inline void logMsg(const std::string &msg)
-{
-    std::cout << "[" << getpid() << "] " << msg << std::endl;
-}
+void detachShm(const void* addr);
+void removeShm(int shmid);
 
 #endif

@@ -1,7 +1,8 @@
 #include "common.h"
 
 int createOrGetSemaphore(key_t key) {
-    int semid = semget(key, SEM_COUNT, 0666 | IPC_CREAT);
+    // 0600 - minimalne prawa
+    int semid = semget(key, SEM_COUNT, 0600 | IPC_CREAT);
     if(semid == -1) {
         perror("semget");
         exit(1);
@@ -38,7 +39,7 @@ void semOp(int semid, int semnum, int op) {
 }
 
 int createOrGetShm(key_t key) {
-    int shmid = shmget(key, sizeof(SharedData), 0666 | IPC_CREAT);
+    int shmid = shmget(key, sizeof(SharedData), 0600 | IPC_CREAT);
     if(shmid == -1) {
         perror("shmget");
         exit(1);
