@@ -1,7 +1,8 @@
 #include "common.h"
 
+// Tworzy (lub pobiera) tablice semaforow (SEM_COUNT elementow) z kluczem 'key'
+// Ustawia prawa 0600 i IPC_CREAT. Zwraca semid.
 int createOrGetSemaphore(key_t key) {
-    // 0600 - minimalne prawa
     int semid = semget(key, SEM_COUNT, 0600 | IPC_CREAT);
     if(semid == -1) {
         perror("semget");
@@ -10,6 +11,7 @@ int createOrGetSemaphore(key_t key) {
     return semid;
 }
 
+// Ustaw wartosc semafora 'semnum' w semid na 'value'
 int setSemValue(int semid, int semnum, int value) {
     union semun arg;
     arg.val = value;
@@ -20,6 +22,7 @@ int setSemValue(int semid, int semnum, int value) {
     return 0;
 }
 
+// Pobiera obecna wartosc semafora 'semnum' w semid
 int getSemValue(int semid, int semnum) {
     int val = semctl(semid, semnum, GETVAL);
     if(val == -1) {
@@ -28,6 +31,7 @@ int getSemValue(int semid, int semnum) {
     return val;
 }
 
+// Wykonuje operacje semaforowa (op moze byc -1, +1, itd.)
 void semOp(int semid, int semnum, int op) {
     struct sembuf sb;
     sb.sem_num = semnum;
@@ -38,6 +42,7 @@ void semOp(int semid, int semnum, int op) {
     }
 }
 
+// Tworzy lub pobiera pamiec dzielona z kluczem 'key' o rozmiarze SharedData
 int createOrGetShm(key_t key) {
     int shmid = shmget(key, sizeof(SharedData), 0600 | IPC_CREAT);
     if(shmid == -1) {
@@ -47,6 +52,7 @@ int createOrGetShm(key_t key) {
     return shmid;
 }
 
+// Podlacza proces do pamieci dzielonej
 SharedData* attachShm(int shmid) {
     void* addr = shmat(shmid, nullptr, 0);
     if(addr == (void*)-1) {
@@ -56,12 +62,14 @@ SharedData* attachShm(int shmid) {
     return reinterpret_cast<SharedData*>(addr);
 }
 
+// Odlacza proces od pamieci dzielonej
 void detachShm(const void* addr) {
     if(shmdt(addr) == -1) {
         perror("shmdt");
     }
 }
 
+// Usuwa segment pamieci dzielonej o identyfikatorze 'shmid'
 void removeShm(int shmid) {
     if(shmctl(shmid, IPC_RMID, nullptr) == -1) {
         perror("shmctl IPC_RMID");
