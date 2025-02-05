@@ -51,7 +51,45 @@ Pliki źródłowe:
 
 ## Kompilacja i Uruchamianie
 
-1. **Kompilacja**  
-   W katalogu z plikami wywołaj:
-   ```bash
-   make
+### 1. Kompilacja  
+W katalogu z plikami wywołaj:  
+```bash
+make
+```
+Spowoduje to utworzenie trzech plików wykonywalnych:  
+
+- `kapitanStatku`
+- `pasazer`
+- `kapitanPortu`
+
+### 2. Uruchamianie  
+Najprościej użyć reguły `run` w pliku `Makefile` z przekazaniem parametrów:  
+
+```bash
+make run N=5 K=3 R=3 T2=5
+```
+
+Gdzie przykładowo:  
+
+- `N=5` – pojemność statku,  
+- `K=3` – pojemność mostka,  
+- `R=3` – maksymalna liczba rejsów,  
+- `T2=5` – czas trwania jednego rejsu.  
+
+Po kolei zostaną uruchomione:  
+
+- `kapitanStatku` (w tle),  
+- `pasazer` (w tle) – generator pasażerów,  
+- `kapitanPortu` (na pierwszym planie) – wysyłanie sygnałów.  
+
+### 3. Zakończenie  
+- `Kapitan Portu` kończy się, gdy `endOfDay == true` albo `rejsCount >= R`.  
+- `Generator` (i pasażerowie) kończą po `endOfDay == true`.  
+- `Kapitan Statku`, osiągając `R` rejsów lub dostając `sygnał2`, usuwa semafory i pamięć współdzieloną, finalnie wychodząc z programu.  
+
+### 4. Komendy `make`
+```bash
+make        # Kompiluje cały projekt, tworzy binarki.
+make run N=5 K=3 R=3 T2=5   # Uruchamia wszystkie procesy z tymi parametrami.
+make clean   # Usuwa pliki obiektowe i binarki.
+```
