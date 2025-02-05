@@ -1,79 +1,57 @@
-<b>Opis Zadania</b>
-Projekt symuluje działanie statku pasażerskiego, który kursuje między dwoma portami przy ograniczonym moście oraz ograniczonej pojemności pokładu. Jest to rozbudowana wersja klasycznego problemu współbieżności, w której należy zapewnić poprawne zarządzanie dostępem do statku i mostka, a także obsługę sygnałów i kończenie rejsów.
+# Projekt "Rejs" – Temat 1
 
-W projekcie występują trzy główne procesy:
+## Opis Zadania
 
-Kapitan Statku – zarządza załadunkiem, rejsami i wyładunkiem pasażerów.
-Kapitan Portu – wysyła sygnały (przyspieszenie wypłynięcia lub zakończenie rejsów).
-Generator Pasażerów (plus procesy pasażerów) – tworzy pasażerów w losowych odstępach, a ci próbują wejść na statek, odbyć rejs, a następnie wylądować.
-Warunki Początkowe
-Statek ma pojemność N (liczba pasażerów, którzy mogą być na pokładzie naraz).
-Mostek łączący ląd ze statkiem ma pojemność K (K < N) i może pomieścić maksymalnie K osób w tym samym czasie.
-Liczba Rejsów do wykonania: R.
-Czas jednego rejsu: T2.
-Projekt zakłada:
+Symulacja działania **statku pasażerskiego**, który kursuje między portami, mając ograniczoną przepustowość **mostka** (K) i pokładu **statku** (N).  
+- Statek może wykonać maksymalnie **R** rejsów w ciągu dnia.  
+- Każdy rejs trwa **T2** sekund.  
+- Pasażerowie przychodzą losowo i próbują wejść na statek, o ile dostępne są miejsca na moście (K) i pokładzie (N).
 
-Pasażerowie są tworzeni w pewnych odstępach czasu (przez proces Generatora).
-Kapitan musi pilnować, by w momencie wypłynięcia mostek był pusty i liczba pasażerów nie przekraczała N.
-Rejs może być przyspieszony sygnałem (sygnał1 – SIGUSR1) albo zakończony przed osiągnięciem R (sygnał2 – SIGUSR2).
-Zasada Działania
-Kapitan Statku
-Oczekuje na załadunek pasażerów, dopóki statek się nie wypełni (lub nie nadejdzie sygnał1).
-Jeśli statek gotowy, czeka aż mostek jest pusty, ogłasza wypłynięcie (rejs trwa T2), po czym następuje wyładunek.
-Pilnuje też, czy nie przyszło polecenie zakończenia rejsów (sygnał2) – wtedy wywołuje forceUnload, ustawiając endOfDay.
-Pasażer (oraz Generator Pasażerów)
-Generator tworzy procesy pasażerów co pewien czas (np. co 1 sek).
-Pasażer próbuje wejść na mostek (jeśli K miejsc jest zajętych, czeka), a następnie na statek (do N osób).
-Czeka na rejs. Po zakończeniu rejsu czeka na wyładunek i opuszcza statek.
-Może zrezygnować, jeśli statek już pełny lub nadchodzi koniec dnia (endOfDay).
-Kapitan Portu
-W pętli losowo (z określonym prawdopodobieństwem) wysyła sygnały do Kapitana Statku.
-SIGUSR1 (sygnał1) – wymusza wcześniejsze wypłynięcie, jeśli trwa załadunek.
-SIGUSR2 (sygnał2) – kończy rejsy: jeśli podczas załadunku – odwołuje rejs, jeśli w trakcie rejsu – kończy go i nie pozwala zacząć nowego.
-Dodatkowe Polecenia Kierownika (Sygnały)
-SIGUSR1: Kapitan Portu (lub inny proces) może wymusić wcześniejsze wypłynięcie statku (np. gdy nie chcemy czekać, aż statek osiągnie maks N).
-SIGUSR2: powoduje zakończenie cyklu rejsów. Jeśli statek jeszcze się ładuje – forceUnload i koniec, jeśli statek w rejsie – zakończyć rejs i nie rozpoczynać kolejnego.
-Kompilacja i Uruchamianie
-Budowanie projektu:
+W projekcie występują **3 główne procesy**:
+1. **Kapitan Statku** – zarządza załadunkiem pasażerów, wypłynięciem i wyładunkiem po rejsie.  
+2. **Generator Pasażerów** (i sami pasażerowie) – tworzy procesy pasażerów w losowych odstępach czasu; każdy pasażer próbuje wejść na pokład i odbyć rejs.  
+3. **Kapitan Portu** – wysyła sygnały do Kapitana Statku (wcześniejsze wypłynięcie, koniec rejsów).
 
-bash
-Kopiuj
-Edytuj
-make
-Tworzy trzy programy:
+## Warunki Początkowe
 
-kapitanStatku
-pasazer (generator pasażerów)
-kapitanPortu
-Uruchamianie projektu
-Korzystamy z reguły run w Makefile, przekazując parametry:
+- **N** – pojemność statku (liczba pasażerów, którzy mogą jednocześnie przebywać na pokładzie).  
+- **K** – pojemność mostka (maksymalna liczba osób wchodzących/wychodzących jednocześnie).  
+- **R** – maksymalna liczba rejsów do wykonania w danym dniu.  
+- **T2** – czas trwania jednego rejsu (w sekundach).
 
-bash
-Kopiuj
-Edytuj
-make run N=5 K=3 R=3 T2=5
-Gdzie:
+Dodatkowo:
+- Statek nie może wypłynąć, dopóki na moście są ludzie.  
+- Jeśli sygnał **SIGUSR2** nadejdzie podczas załadunku, Kapitan Statku przerwie rejs i wyprosi pasażerów (forceUnload).  
+- Jeśli sygnał nadejdzie podczas rejsu, statek dokończy obecny rejs i nie rozpocznie kolejnego.
 
-N – pojemnosc statku,
-K – pojemnosc mostka,
-R – maks liczba rejsow,
-T2 – czas trwania jednego rejsu (sekundy).
-Po kolei odpalane są:
+## Struktura Programu
 
-KapitanStatku w tle (z zadanymi parametrami),
-Generator pasażerów (w tle),
-KapitanPortu (na pierwszym planie).
-Zamykanie
+Pliki źródłowe:
 
-Jeśli KapitanPortu dojdzie do wniosku, że endOfDay lub osiągnięto R rejsów, kończy działanie.
-Pasażerowie kończą się, gdy endOfDay=true.
-Kapitan Statku (po zakończeniu R rejsów lub sygnale2) sprząta zasoby IPC.
-Pliki
-common.h, common.cpp – obsługa semaforów, pamięci dzielonej, kolory w konsoli.
-kapitanStatku.cpp – główna logika rejsów, sygnalizuje endOfDay, usuwa zasoby IPC.
-pasazer.cpp – generator pasażerów (main) i funkcja onePassenger, określająca, jak pasażer wsiada i opuszcza statek.
-kapitanPortu.cpp – wysyła sygnały w pętli, by wpływać na czas rejsów.
-Komendy Make
-make – kompiluje projekt.
-make run N=... K=... R=... T2=... – uruchamia cały projekt z zadanymi parametrami.
-make clean – usuwa pliki obiektowe i pliki binarne.
+- **`common.h` / `common.cpp`**  
+  Zawierają funkcje pomocnicze do obsługi pamięci współdzielonej i semaforów (System V), a także definicje kolorowego logowania w konsoli.
+
+- **`kapitanStatku.cpp`**  
+  Inicjuje zasoby (sem, shm), uruchamia główną pętlę rejsów (załadunek -> wypłynięcie -> wyładunek), reaguje na sygnały (SIGUSR1, SIGUSR2) i ostatecznie usuwa zasoby IPC.
+
+- **`pasazer.cpp`**  
+  Uruchamia **Generator Pasażerów**, który w pętli tworzy (fork) procesy pasażerów. Każdy pasażer stara się wejść na mostek, pokład statku, czeka na rejs i potem schodzi. Jeśli statek jest już pełny albo **endOfDay** nadejdzie, pasażerowie rezygnują.
+
+- **`kapitanPortu.cpp`**  
+  Losowo, co kilka sekund, wysyła sygnał **SIGUSR1** (wymuszone wypłynięcie) bądź **SIGUSR2** (koniec rejsów) do Kapitana Statku. Kończy się, gdy `rejsCount >= R` lub `endOfDay`.
+
+## Sygnały
+
+- **SIGUSR1**  
+  Kapitan Statku otrzymuje go i skraca fazę załadunku (wcześniejsze wypłynięcie).  
+- **SIGUSR2**  
+  Kapitan Statku kończy rejsy:  
+  - Jeśli podczas załadunku: forceUnload i koniec dnia,  
+  - Jeśli podczas rejsu: kończy bieżący rejs i nie zaczyna następnego.
+
+## Kompilacja i Uruchamianie
+
+1. **Kompilacja**  
+   W katalogu z plikami wywołaj:
+   ```bash
+   make
