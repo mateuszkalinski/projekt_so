@@ -1,4 +1,4 @@
-Opis Zadania
+<b>Opis Zadania</b>
 Projekt symuluje działanie statku pasażerskiego, który kursuje między dwoma portami przy ograniczonym moście oraz ograniczonej pojemności pokładu. Jest to rozbudowana wersja klasycznego problemu współbieżności, w której należy zapewnić poprawne zarządzanie dostępem do statku i mostka, a także obsługę sygnałów i kończenie rejsów.
 
 W projekcie występują trzy główne procesy:
